@@ -1,0 +1,13 @@
+## Build and Output folders
+bin/
+obj/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.log

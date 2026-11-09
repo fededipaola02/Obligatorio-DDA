@@ -1,0 +1,186 @@
+@page "/"
+@page "/equipos"
+@rendermode InteractiveServer
+@inject ServicioEquipos ApiService
+@inject NavigationManager Nav
+
+<PageTitle>Equipos - Sistema de Incidentes</PageTitle>
+
+<h2>Gestión de Equipos</h2>
+
+@if (!string.IsNullOrEmpty(mensajeExito))
+{
+    <div class="alert alert-success alert-dismissible">
+        @mensajeExito
+        <button type="button" class="btn-close" @onclick="() => mensajeExito = null"></button>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(mensajeError))
+{
+    <div class="alert alert-danger alert-dismissible">
+        @mensajeError
+        <button type="button" class="btn-close" @onclick="() => mensajeError = null"></button>
+    </div>
+}
+
+<!-- Filtros -->
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row g-2">
+            <div class="col-md-3">
+                <label class="form-label">Buscar por nombre</label>
+                <input type="text" class="form-control" placeholder="Nombre..." @bind="filtro.Buscar" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Tipo</label>
+                <select class="form-select" @bind="filtro.Tipo">
+                    <option value="">Todos</option>
+                    @foreach (TipoEquipo tipo in Enum.GetValues(typeof(TipoEquipo)))
+                    {
+                        <option value="@tipo">@tipo</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Estado</label>
+                <select class="form-select" @bind="filtro.Estado">
+                    <option value="">Todos</option>
+                    @foreach (EstadoEquipo estado in Enum.GetValues(typeof(EstadoEquipo)))
+                    {
+                        <option value="@estado">@estado</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end gap-2">
+                <button class="btn btn-primary" @onclick="CargarAsync">Filtrar</button>
+                <button class="btn btn-secondary" @onclick="LimpiarFiltros">Limpiar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Botón Nuevo -->
+<div class="mb-3">
+    <a href="/equipos/nuevo" class="btn btn-success">+ Nuevo Equipo</a>
+</div>
+
+<!-- Tabla -->
+@if (cargando)
+{
+    <p>Cargando...</p>
+}
+else if (equipos == null || equipos.Count == 0)
+{
+    <p class="text-muted">No se encontraron equipos.</p>
+}
+else
+{
+    <table class="table table-bordered table-hover">
+        <thead class="table-light">
+            <tr>
+                <th>ID</th>
+                <th>Nombre</th>
+                <th>Tipo</th>
+                <th>Estado</th>
+                <th>Reporte Asignado</th>
+                <th>Fecha Alta</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var equipo in equipos)
+            {
+                <tr>
+                    <td>@equipo.Id</td>
+                    <td>@equipo.Nombre</td>
+                    <td>@equipo.Tipo</td>
+                    <td>@equipo.Estado</td>
+                    <td>@(equipo.ReporteActualId.HasValue ? $"Reporte #{equipo.ReporteActualId}" : "-")</td>
+                    <td>@equipo.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                    <td>
+                        <a href="/equipos/detalle/@equipo.Id" class="btn btn-sm btn-outline-secondary">Ver</a>
+                        <a href="/equipos/editar/@equipo.Id" class="btn btn-sm btn-outline-primary">Editar</a>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => SolicitarBaja(equipo)">Dar de Baja</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<!-- Modal de Confirmación de Baja -->
+@if (equipoParaBaja != null)
+{
+    <div class="modal show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirmar Baja</h5>
+                </div>
+                <div class="modal-body">
+                    <p>¿Está seguro que desea dar de baja al equipo <strong>@equipoParaBaja.Nombre</strong>?</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CancelarBaja">Cancelar</button>
+                    <button class="btn btn-danger" @onclick="ConfirmarBajaAsync">Confirmar Baja</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<EquipoDto>? equipos;
+    private FiltroEquipoDto filtro = new();
+    private bool cargando = true;
+    private string? mensajeExito;
+    private string? mensajeError;
+    private EquipoDto? equipoParaBaja;
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        cargando = true;
+        mensajeError = null;
+        try
+        {
+            equipos = await ApiService.ObtenerEquiposAsync(filtro);
+        }
+        catch (Exception ex)
+        {
+            mensajeError = ex.Message;
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    private async Task LimpiarFiltros()
+    {
+        filtro = new FiltroEquipoDto();
+        await CargarAsync();
+    }
+
+    private void SolicitarBaja(EquipoDto equipo) => equipoParaBaja = equipo;
+    private void CancelarBaja() => equipoParaBaja = null;
+
+    private async Task ConfirmarBajaAsync()
+    {
+        if (equipoParaBaja == null) return;
+        try
+        {
+            await ApiService.DarDeBajaAsync(equipoParaBaja.Id);
+            mensajeExito = $"Equipo '{equipoParaBaja.Nombre}' dado de baja correctamente.";
+            equipoParaBaja = null;
+            await CargarAsync();
+        }
+        catch (Exception ex)
+        {
+            mensajeError = ex.Message;
+            equipoParaBaja = null;
+        }
+    }
+}

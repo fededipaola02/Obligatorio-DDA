@@ -1,0 +1,268 @@
+@page "/equipos/detalle/{Id:int}"
+@rendermode InteractiveServer
+@inject ServicioEquipos ApiService
+@inject NavigationManager Nav
+
+<PageTitle>Detalle del Equipo</PageTitle>
+
+<h2>Detalle del Equipo #@Id</h2>
+
+<div class="mb-3 d-flex gap-2">
+    <a href="/equipos" class="btn btn-secondary">← Volver al listado</a>
+    <a href="/equipos/editar/@Id" class="btn btn-primary">Editar</a>
+    <button class="btn btn-danger" @onclick="() => mostrarModalBaja = true">Dar de Baja</button>
+</div>
+
+@if (!string.IsNullOrEmpty(mensajeExito))
+{
+    <div class="alert alert-success alert-dismissible">
+        @mensajeExito
+        <button type="button" class="btn-close" @onclick="() => mensajeExito = null"></button>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(mensajeError))
+{
+    <div class="alert alert-danger alert-dismissible">
+        @mensajeError
+        <button type="button" class="btn-close" @onclick="() => mensajeError = null"></button>
+    </div>
+}
+
+@if (cargando)
+{
+    <p>Cargando...</p>
+}
+else if (equipo == null)
+{
+    <div class="alert alert-warning">
+        Equipo no encontrado.
+        <a href="/equipos" class="btn btn-sm btn-secondary ms-2">Volver al listado</a>
+    </div>
+}
+else
+{
+    <!-- Datos del equipo -->
+    <div class="card mb-4" style="max-width: 600px;">
+        <div class="card-header"><strong>Datos del Equipo</strong></div>
+        <div class="card-body">
+            <dl class="row mb-0">
+                <dt class="col-sm-4">Nombre</dt>
+                <dd class="col-sm-8">@equipo.Nombre</dd>
+
+                <dt class="col-sm-4">Tipo</dt>
+                <dd class="col-sm-8">@equipo.Tipo</dd>
+
+                <dt class="col-sm-4">Estado</dt>
+                <dd class="col-sm-8">@equipo.Estado</dd>
+
+                <dt class="col-sm-4">Activo</dt>
+                <dd class="col-sm-8">@(equipo.Activo ? "Sí" : "No")</dd>
+
+                <dt class="col-sm-4">Reporte Asignado</dt>
+                <dd class="col-sm-8">@(equipo.ReporteActualId.HasValue ? $"Reporte #{equipo.ReporteActualId}" : "Sin asignación")</dd>
+
+                <dt class="col-sm-4">Fecha de Alta</dt>
+                <dd class="col-sm-8">@equipo.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</dd>
+
+                <dt class="col-sm-4">Última Modificación</dt>
+                <dd class="col-sm-8">@(equipo.FechaActualizacion.HasValue ? equipo.FechaActualizacion.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") : "-")</dd>
+            </dl>
+        </div>
+    </div>
+
+    <!-- Panel de asignación / liberación -->
+    <div class="card mb-4" style="max-width: 600px;">
+        <div class="card-header"><strong>Asignación a Incidente</strong></div>
+        <div class="card-body">
+            @if (equipo.Estado == EstadoEquipo.EnUso)
+            {
+                <p>Este equipo está asignado al <strong>Reporte #@equipo.ReporteActualId</strong>.</p>
+                <button class="btn btn-warning" @onclick="LiberarAsync" disabled="@procesando">
+                    @(procesando ? "Procesando..." : "Liberar Equipo")
+                </button>
+            }
+            else if (equipo.Estado == EstadoEquipo.EnMantenimiento)
+            {
+                <div class="alert alert-warning mb-0">
+                    El equipo está en mantenimiento y no puede asignarse a incidentes.
+                </div>
+            }
+            else
+            {
+                <EditForm Model="@asignarModelo" OnValidSubmit="AsignarAsync">
+                    <DataAnnotationsValidator />
+                    <div class="mb-3">
+                        <label class="form-label">Número de Reporte <span class="text-danger">*</span></label>
+                        <InputNumber class="form-control" @bind-Value="asignarModelo.ReporteId" placeholder="Ej: 1" />
+                        <ValidationMessage For="() => asignarModelo.ReporteId" class="text-danger small" />
+                    </div>
+                    <button type="submit" class="btn btn-primary" disabled="@procesando">
+                        @(procesando ? "Procesando..." : "Asignar a Reporte")
+                    </button>
+                </EditForm>
+            }
+        </div>
+    </div>
+
+    <!-- Historial de auditoría -->
+    <div class="card">
+        <div class="card-header"><strong>Historial de Auditoría</strong></div>
+        <div class="card-body p-0">
+            @if (auditorias == null || auditorias.Count == 0)
+            {
+                <p class="p-3 text-muted mb-0">Sin registros de auditoría.</p>
+            }
+            else
+            {
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Fecha y Hora</th>
+                            <th>Acción</th>
+                            <th>Estado Anterior</th>
+                            <th>Estado Nuevo</th>
+                            <th>Reporte</th>
+                            <th>Usuario</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var log in auditorias)
+                        {
+                            <tr>
+                                <td>@log.FechaHora.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
+                                <td>@log.Accion</td>
+                                <td>@(log.EstadoAnterior.HasValue ? log.EstadoAnterior.ToString() : "-")</td>
+                                <td>@(log.EstadoNuevo.HasValue ? log.EstadoNuevo.ToString() : "-")</td>
+                                <td>@(log.ReporteId.HasValue ? $"#{log.ReporteId}" : "-")</td>
+                                <td>@log.UsuarioId</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+}
+
+<!-- Modal de Baja -->
+@if (mostrarModalBaja)
+{
+    <div class="modal show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirmar Baja</h5>
+                </div>
+                <div class="modal-body">
+                    <p>¿Está seguro que desea dar de baja al equipo <strong>@equipo?.Nombre</strong>?</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => mostrarModalBaja = false">Cancelar</button>
+                    <button class="btn btn-danger" @onclick="ConfirmarBajaAsync" disabled="@procesando">
+                        @(procesando ? "Procesando..." : "Confirmar Baja")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private EquipoDto? equipo;
+    private List<AuditoriaEquipoDto>? auditorias;
+    private AsignarEquipoDto asignarModelo = new();
+    private bool cargando = true;
+    private bool procesando = false;
+    private bool mostrarModalBaja = false;
+    private string? mensajeExito;
+    private string? mensajeError;
+
+    protected override async Task OnInitializedAsync() => await CargarDatosAsync();
+
+    private async Task CargarDatosAsync()
+    {
+        cargando = true;
+        mensajeError = null;
+        try
+        {
+            equipo = await ApiService.ObtenerPorIdAsync(Id);
+            if (equipo != null)
+                auditorias = await ApiService.ObtenerAuditoriaAsync(Id);
+        }
+        catch (Exception ex)
+        {
+            mensajeError = ex.Message;
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    private async Task AsignarAsync()
+    {
+        procesando = true;
+        mensajeError = null;
+        mensajeExito = null;
+        try
+        {
+            equipo = await ApiService.AsignarAReporteAsync(Id, asignarModelo);
+            mensajeExito = $"Equipo asignado al Reporte #{asignarModelo.ReporteId}.";
+            asignarModelo = new AsignarEquipoDto();
+            auditorias = await ApiService.ObtenerAuditoriaAsync(Id);
+        }
+        catch (Exception ex)
+        {
+            mensajeError = ex.Message;
+        }
+        finally
+        {
+            procesando = false;
+        }
+    }
+
+    private async Task LiberarAsync()
+    {
+        procesando = true;
+        mensajeError = null;
+        mensajeExito = null;
+        try
+        {
+            equipo = await ApiService.LiberarDeReporteAsync(Id);
+            mensajeExito = "Equipo liberado. Vuelve a estar Disponible.";
+            auditorias = await ApiService.ObtenerAuditoriaAsync(Id);
+        }
+        catch (Exception ex)
+        {
+            mensajeError = ex.Message;
+        }
+        finally
+        {
+            procesando = false;
+        }
+    }
+
+    private async Task ConfirmarBajaAsync()
+    {
+        procesando = true;
+        mensajeError = null;
+        try
+        {
+            await ApiService.DarDeBajaAsync(Id);
+            mostrarModalBaja = false;
+            Nav.NavigateTo("/equipos");
+        }
+        catch (Exception ex)
+        {
+            mensajeError = ex.Message;
+            mostrarModalBaja = false;
+        }
+        finally
+        {
+            procesando = false;
+        }
+    }
+}
